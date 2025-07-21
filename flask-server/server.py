@@ -35,17 +35,45 @@ def index():
 @token_required
 def predict_diabetes():
     data = request.get_json()
+    app.logger.info(f"Received data for prediction: {data}")
+
+    # Check if all required fields are present and have valid values
+    required_fields = [
+        'HighBP', 'HighChol', 'CholCheck', 'BMI', 'Smoker', 'Stroke',
+        'HeartDiseaseorAttack', 'PhysActivity', 'Fruits', 'Veggies',
+        'HvyAlcoholConsump', 'AnyHealthcare', 'NoDocbcCost', 'GenHlth',
+        'MentHlth', 'PhysHlth', 'DiffWalk', 'Sex', 'Age', 'Education', 'Income'
+    ]
+
+    missing_fields = [field for field in required_fields if field not in data or data[field] is None or data[field] == '']
+    if missing_fields:
+        return jsonify({
+            'prediction': None,
+            'message': f'Missing or invalid values for fields: {", ".join(missing_fields)}'
+        }), 400
+
     try:
         # Use the trained logistic regression model for prediction
         prediction, accuracy = predict_logreg(data)
-        # Save to DB, linked to user
-        db.predictions.insert_one({
-            "user_id": request.user_id,
-            "input": data,
-            "prediction": prediction
-        })
+        app.logger.info(f"Model prediction: {prediction}, Accuracy: {accuracy}")
+        
+        # Use update_one with upsert=True to create or update the prediction
+        result = db.predictions.update_one(
+            {"user_id": request.user_id},
+            {
+                "$set": {
+                    "input": data,
+                    "prediction": prediction
+                }
+            },
+            upsert=True
+        )
+
+        app.logger.info(f"MongoDB update result: matched_count={result.matched_count}, modified_count={result.modified_count}, upserted_id={result.upserted_id}")
+        
         return jsonify({'prediction': str(prediction), 'accuracy': accuracy})
     except Exception as e:
+        app.logger.error(f"An error occurred during prediction: {e}", exc_info=True)
         return jsonify({'prediction': None, 'message': str(e)}), 400
 
 # Add endpoint to delete user's prediction

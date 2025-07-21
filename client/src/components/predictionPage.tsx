@@ -60,6 +60,12 @@ const PredictionPage: React.FC = () => {
     setError(null);
     setPrediction(null);
     setPredictionExists(false);
+
+    const numericData = Object.entries(formData).reduce((acc, [key, value]) => {
+      acc[key] = Number(value);
+      return acc;
+    }, {} as { [key: string]: number });
+
     try {
       const response = await fetch('/api/predict-diabetes', {
         method: 'POST',
@@ -67,11 +73,15 @@ const PredictionPage: React.FC = () => {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(numericData),
       });
       const result = await response.json();
       if (response.ok) {
         setPrediction(result.prediction);
+        setPredictionInput(numericData);
+        setLogregResult(result.prediction);
+        setLogregAccuracy(result.accuracy);
+        setLogregFetchedInput(numericData);
         setPredictionExists(true);
       } else if (response.status === 409) {
         setError(result.error || 'You already have a prediction. Delete it to re-enter.');

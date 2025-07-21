@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import StyledButton from "./StyledButton";
 
 const initialState = {
   HighBP: '',
@@ -7,7 +8,7 @@ const initialState = {
   BMI: '',
   Smoker: '',
   Stroke: '',
-  HeartDisease: '',
+  HeartDiseaseorAttack: '',
   PhysActivity: '',
   Fruits: '',
   Veggies: '',
@@ -33,21 +34,47 @@ const yesNoOptions = [
 
 const DiabetesPredictionInputForm: React.FC<{ onSubmit?: (data: FormState) => void }> = ({ onSubmit }) => {
   const [form, setForm] = useState<FormState>(initialState);
+  const [errors, setErrors] = useState<string[]>([]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+    setErrors([]); // Clear errors when user makes changes
+  };
+
+  const validateForm = () => {
+    const newErrors: string[] = [];
+    Object.entries(form).forEach(([key, value]) => {
+      if (!value || value.trim() === '') {
+        newErrors.push(`${key} is required`);
+      }
+    });
+    setErrors(newErrors);
+    return newErrors.length === 0;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (onSubmit) onSubmit(form);
-    // You can add validation or API call here
+    if (validateForm() && onSubmit) {
+      onSubmit(form);
+    }
   };
 
   return (
-    <div className="max-h-[700px] overflow-y-auto w-full max-w-xl mx-auto p-2 hide-scrollbar rounded-2xl" style={{background: 'rgba(20, 20, 20, 0.7)'}}>
+    <div className="max-h-[700px] overflow-y-auto w-full max-w-xl mx-auto p-2 no-scrollbar rounded-2xl" style={{background: 'rgba(20, 20, 20, 0.7)'}}>
       <form onSubmit={handleSubmit} className="space-y-2">
         <h2 className="text-2xl font-bold mb-4 text-gray-100 text-center">Diabetes Prediction Input</h2>
+        
+        {errors.length > 0 && (
+          <div className="bg-red-500 bg-opacity-20 p-4 rounded-lg mb-4">
+            <h3 className="text-red-200 font-semibold mb-2">Please fix the following errors:</h3>
+            <ul className="list-disc list-inside text-red-100">
+              {errors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* HighBP */}
           <div>
@@ -94,10 +121,10 @@ const DiabetesPredictionInputForm: React.FC<{ onSubmit?: (data: FormState) => vo
               {yesNoOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
-          {/* HeartDisease */}
+          {/* HeartDiseaseorAttack */}
           <div>
-            <label className="block text-gray-200 mb-1">Heart Disease</label>
-            <select name="HeartDisease" value={form.HeartDisease} onChange={handleChange} className="w-full rounded px-3 py-2 border border-gray-600 bg-transparent text-gray-100">
+            <label className="block text-gray-200 mb-1">Heart Disease or Attack</label>
+            <select name="HeartDiseaseorAttack" value={form.HeartDiseaseorAttack} onChange={handleChange} className="w-full rounded px-3 py-2 border border-gray-600 bg-transparent text-gray-100">
               <option value="">Select</option>
               {yesNoOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
@@ -210,9 +237,14 @@ const DiabetesPredictionInputForm: React.FC<{ onSubmit?: (data: FormState) => vo
             </select>
           </div>
         </div>
-        <button type="submit" className="mt-4 w-full bg-gray-900 text-white py-2 rounded shadow hover:bg-gray-800 transition">
-          Predict Diabetes
-        </button>
+        <div className="pt-4">
+          <StyledButton
+            type="submit"
+            label="Predict Diabetes"
+            color="blue"
+            icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7l5-4 5 4M9 7v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2z" /></svg>}
+          />
+        </div>
       </form>
     </div>
   );

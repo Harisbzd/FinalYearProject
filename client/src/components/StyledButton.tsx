@@ -1,11 +1,12 @@
 import React from 'react';
 
 interface StyledButtonProps {
-  onClick: () => void;
+  onClick?: () => void;
   label: string;
   icon: JSX.Element;
   color: 'blue' | 'purple' | 'green' | 'yellow' | 'red';
   disabled?: boolean;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 const colorSchemes = {
@@ -16,12 +17,13 @@ const colorSchemes = {
   red: 'from-red-600 via-rose-600 to-pink-600',
 };
 
-const StyledButton: React.FC<StyledButtonProps> = ({ onClick, label, icon, color, disabled }) => {
+const StyledButton: React.FC<StyledButtonProps> = ({ onClick, label, icon, color, disabled, type = 'button' }) => {
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`group relative w-64 px-8 py-4 bg-gradient-to-r ${colorSchemes[color]} text-white rounded-2xl hover:shadow-2xl transition-all duration-500 shadow-lg transform hover:scale-105 hover:-translate-y-1 flex items-center justify-center font-semibold text-lg`}
+      className={`group relative w-full px-8 py-4 bg-gradient-to-r ${colorSchemes[color]} text-white rounded-2xl hover:shadow-2xl transition-all duration-500 shadow-lg transform hover:scale-105 hover:-translate-y-1 flex items-center justify-center font-semibold text-lg`}
     >
       <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent opacity-0 group-hover:opacity-20 rounded-2xl transition-opacity duration-500"></div>
       <div className="relative flex items-center">
