@@ -1,0 +1,15 @@
+KNN Model Classification Report
+========================================
+
+              precision    recall  f1-score   support
+
+         0.0     0.7878    0.6327    0.7018      7070
+         1.0     0.6931    0.8295    0.7552      7069
+
+    accuracy                         0.7311     14139
+   macro avg     0.7404    0.7311    0.7285     14139
+weighted avg     0.7404    0.7311    0.7285     14139
+
+Accuracy: 0.7311
+AUC Score: 0.8009
+Mean CV Accuracy: 0.7316 (+/- 0.0101)

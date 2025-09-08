@@ -38,7 +38,7 @@ function SignUpForm({ onSwitch }: SignUpFormProps): React.JSX.Element {
     try {
       const success = await register(name, email, password);
       if (success) {
-        navigate("/prediction");
+        navigate("/dashboard");
       }
     } catch (error) {
       console.error('Registration error:', error);

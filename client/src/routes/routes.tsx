@@ -1,6 +1,7 @@
 import { RouteObject } from 'react-router-dom';
 import App from '../App';
 import ErrorPage from '../components/ErrorPage';
+import Dashboard from '../components/Dashboard';
 import PredictionPage from '../components/predictionPage';
 import SettingsPage from '../components/SettingsPage';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -13,6 +14,19 @@ const routes: RouteObject[] = [
         element: (
             <AuthProvider>
                 <App />
+            </AuthProvider>
+        ),
+        errorElement: <ErrorPage />,
+    },
+    {
+        path: "/dashboard",
+        element: (
+            <AuthProvider>
+                <Layout>
+                    <ProtectedRoute>
+                        <Dashboard />
+                    </ProtectedRoute>
+                </Layout>
             </AuthProvider>
         ),
         errorElement: <ErrorPage />,

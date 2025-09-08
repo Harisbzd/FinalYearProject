@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FaUser, FaSignOutAlt, FaCog, FaChevronDown } from 'react-icons/fa';
+import { FaUser, FaSignOutAlt, FaCog, FaChevronDown, FaExchangeAlt } from 'react-icons/fa';
 
 const Navbar: React.FC = () => {
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, userRole, setUserRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -31,7 +31,16 @@ const Navbar: React.FC = () => {
   };
 
   const handleLogoClick = () => {
-    navigate('/prediction');
+    navigate('/dashboard');
+  };
+
+  const handleRoleSwitch = () => {
+    if (userRole === 'patient') {
+      setUserRole('data-scientist');
+    } else if (userRole === 'data-scientist') {
+      setUserRole('patient');
+    }
+    setIsDropdownOpen(false);
   };
 
   return (
@@ -74,10 +83,24 @@ const Navbar: React.FC = () => {
                   <div className="px-4 py-3 border-b border-gray-700">
                     <p className="text-sm font-medium text-white">{user.username}</p>
                     <p className="text-sm text-gray-400">{user.email}</p>
+                    {userRole && (
+                      <p className="text-xs text-blue-400 mt-1">
+                        Role: {userRole === 'patient' ? 'Patient' : 'Data Scientist'}
+                      </p>
+                    )}
                   </div>
 
                   {/* Menu Items */}
                   <div className="py-1">
+                    {userRole && (
+                      <button
+                        onClick={handleRoleSwitch}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
+                      >
+                        <FaExchangeAlt className="mr-3 text-gray-400" />
+                        Switch to {userRole === 'patient' ? 'Data Scientist' : 'Patient'}
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         navigate('/settings');

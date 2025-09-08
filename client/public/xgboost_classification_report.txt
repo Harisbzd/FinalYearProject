@@ -1,0 +1,15 @@
+XGBoost Model Classification Report
+========================================
+
+              precision    recall  f1-score   support
+
+         0.0     0.7754    0.7123    0.7425      7070
+         1.0     0.7339    0.7936    0.7626      7069
+
+    accuracy                         0.7530     14139
+   macro avg     0.7546    0.7530    0.7525     14139
+weighted avg     0.7546    0.7530    0.7525     14139
+
+Accuracy: 0.7530
+AUC Score: 0.8272
+Mean CV Accuracy: 0.7499 (+/- 0.0072)

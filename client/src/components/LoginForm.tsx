@@ -21,7 +21,7 @@ function LoginForm({ onSwitch }: LoginFormProps): React.JSX.Element {
     try {
       const success = await login(email, password);
       if (success) {
-        navigate("/prediction");
+        navigate("/dashboard");
       }
     } catch (error) {
       console.error('Login error:', error);

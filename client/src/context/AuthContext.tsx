@@ -9,9 +9,11 @@ interface User {
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  userRole: 'patient' | 'data-scientist' | null;
   login: (email: string, password: string) => Promise<boolean>;
   register: (username: string, email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  setUserRole: (role: 'patient' | 'data-scientist') => void;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -33,16 +35,21 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<'patient' | 'data-scientist' | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Check for existing token on app load
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
+    const savedRole = localStorage.getItem('userRole');
     
     if (savedToken && savedUser) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
+      if (savedRole) {
+        setUserRole(savedRole as 'patient' | 'data-scientist');
+      }
       verifyToken(savedToken);
     } else {
       setLoading(false);
@@ -141,16 +148,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = () => {
     setToken(null);
     setUser(null);
+    setUserRole(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('userRole');
+  };
+
+  const handleSetUserRole = (role: 'patient' | 'data-scientist') => {
+    setUserRole(role);
+    localStorage.setItem('userRole', role);
   };
 
   const value: AuthContextType = {
     user,
     token,
+    userRole,
     login,
     register,
     logout,
+    setUserRole: handleSetUserRole,
     isAuthenticated: !!token && !!user,
     loading,
   };

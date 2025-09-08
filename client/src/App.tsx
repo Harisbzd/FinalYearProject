@@ -4,7 +4,7 @@ import SignUpForm from "./components/SignUpForm";
 import LoginForm from "./components/LoginForm";
 
 function App(): React.JSX.Element {
-  const [showRegister, setShowRegister] = useState<boolean>(false); // toggle between login and signup
+  const [showRegister, setShowRegister] = useState<boolean>(false); 
 
   return (
     <div
