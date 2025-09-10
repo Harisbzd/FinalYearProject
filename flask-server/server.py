@@ -107,7 +107,7 @@ def delete_prediction():
 def get_prediction():
     pred = db.predictions.find_one({"user_id": request.user_id})
     if pred:
-        _, accuracy, auc_score, sensitivity, specificity, _, _ = load_model()
+        _, accuracy, auc_score, sensitivity, specificity, _ = load_model()
         return jsonify({
             'prediction': pred.get('prediction'),
             'input': pred.get('input'),
@@ -215,8 +215,8 @@ def predict_diabetes_randomforest():
 
     try:
         # Use the trained Random Forest model for prediction
-        prediction, accuracy, auc_score = predict_randomforest(data)
-        app.logger.info(f"Random Forest Model prediction: {prediction}, Accuracy: {accuracy}, AUC: {auc_score}")
+        prediction, accuracy, auc_score, sensitivity, specificity = predict_randomforest(data)
+        app.logger.info(f"Random Forest Model prediction: {prediction}, Accuracy: {accuracy}, AUC: {auc_score}, Sensitivity: {sensitivity}, Specificity: {specificity}")
         
         # Use update_one with upsert=True to create or update the prediction
         result = db.predictions.update_one(
@@ -226,7 +226,9 @@ def predict_diabetes_randomforest():
                     "input": data,
                     "randomforest_prediction": prediction,
                     "randomforest_accuracy": accuracy,
-                    "randomforest_auc": auc_score
+                    "randomforest_auc": auc_score,
+                    "randomforest_sensitivity": sensitivity,
+                    "randomforest_specificity": specificity
                 }
             },
             upsert=True
@@ -234,7 +236,13 @@ def predict_diabetes_randomforest():
 
         app.logger.info(f"MongoDB update result: matched_count={result.matched_count}, modified_count={result.modified_count}, upserted_id={result.upserted_id}")
         
-        return jsonify({'prediction': str(prediction), 'accuracy': accuracy, 'auc_score': auc_score})
+        return jsonify({
+            'prediction': str(prediction), 
+            'accuracy': accuracy, 
+            'auc_score': auc_score,
+            'sensitivity': sensitivity,
+            'specificity': specificity
+        })
     except Exception as e:
         app.logger.error(f"An error occurred during Random Forest prediction: {e}", exc_info=True)
         return jsonify({'prediction': None, 'message': str(e)}), 400
@@ -244,12 +252,14 @@ def predict_diabetes_randomforest():
 def get_randomforest_prediction():
     pred = db.predictions.find_one({"user_id": request.user_id})
     if pred:
-        _, accuracy, auc_score, _ = load_randomforest_model()
+        _, accuracy, auc_score, sensitivity, specificity, _, _ = load_randomforest_model()
         return jsonify({
             'prediction': pred.get('randomforest_prediction'),
             'input': pred.get('input'),
             'accuracy': accuracy,
-            'auc_score': auc_score
+            'auc_score': auc_score,
+            'sensitivity': sensitivity,
+            'specificity': specificity
         }), 200
     else:
         return jsonify({'error': 'No Random Forest prediction found.'}), 404
@@ -277,8 +287,8 @@ def predict_diabetes_knn():
 
     try:
         # Use the trained KNN model for prediction
-        prediction, accuracy, auc_score = predict_knn(data)
-        app.logger.info(f"KNN Model prediction: {prediction}, Accuracy: {accuracy}, AUC: {auc_score}")
+        prediction, accuracy, auc_score, sensitivity, specificity = predict_knn(data)
+        app.logger.info(f"KNN Model prediction: {prediction}, Accuracy: {accuracy}, AUC: {auc_score}, Sensitivity: {sensitivity}, Specificity: {specificity}")
         
         # Use update_one with upsert=True to create or update the prediction
         result = db.predictions.update_one(
@@ -288,7 +298,9 @@ def predict_diabetes_knn():
                     "input": data,
                     "knn_prediction": prediction,
                     "knn_accuracy": accuracy,
-                    "knn_auc": auc_score
+                    "knn_auc": auc_score,
+                    "knn_sensitivity": sensitivity,
+                    "knn_specificity": specificity
                 }
             },
             upsert=True
@@ -296,7 +308,13 @@ def predict_diabetes_knn():
 
         app.logger.info(f"MongoDB update result: matched_count={result.matched_count}, modified_count={result.modified_count}, upserted_id={result.upserted_id}")
         
-        return jsonify({'prediction': str(prediction), 'accuracy': accuracy, 'auc_score': auc_score})
+        return jsonify({
+            'prediction': str(prediction), 
+            'accuracy': accuracy, 
+            'auc_score': auc_score,
+            'sensitivity': sensitivity,
+            'specificity': specificity
+        })
     except Exception as e:
         app.logger.error(f"An error occurred during KNN prediction: {e}", exc_info=True)
         return jsonify({'prediction': None, 'message': str(e)}), 400
@@ -306,15 +324,17 @@ def predict_diabetes_knn():
 def get_knn_prediction():
     pred = db.predictions.find_one({"user_id": request.user_id})
     if pred:
-        _, accuracy, auc_score, _ = load_knn_model()
+        _, accuracy, auc_score, sensitivity, specificity, _ = load_knn_model()
         return jsonify({
             'prediction': pred.get('knn_prediction'),
             'input': pred.get('input'),
             'accuracy': accuracy,
-            'auc_score': auc_score
+            'auc_score': auc_score,
+            'sensitivity': sensitivity,
+            'specificity': specificity
         }), 200
     else:
         return jsonify({'error': 'No KNN prediction found.'}), 404
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

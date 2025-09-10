@@ -14,11 +14,15 @@ interface ModelImagesProps {
   xgboostSpecificity?: number | null;
   randomforestAccuracy?: number | null;
   randomforestAuc?: number | null;
+  randomforestSensitivity?: number | null;
+  randomforestSpecificity?: number | null;
   knnAccuracy?: number | null;
   knnAuc?: number | null;
+  knnSensitivity?: number | null;
+  knnSpecificity?: number | null;
 }
 
-const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logregAccuracy, logregAuc, logregSensitivity, logregSpecificity, xgboostAccuracy, xgboostAuc, xgboostSensitivity, xgboostSpecificity, randomforestAccuracy, randomforestAuc, knnAccuracy, knnAuc }) => {
+const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logregAccuracy, logregAuc, logregSensitivity, logregSpecificity, xgboostAccuracy, xgboostAuc, xgboostSensitivity, xgboostSpecificity, randomforestAccuracy, randomforestAuc, randomforestSensitivity, randomforestSpecificity, knnAccuracy, knnAuc, knnSensitivity, knnSpecificity }) => {
   // Define model-specific image paths
   const getImagePaths = (model: string) => {
     switch (model) {
@@ -131,7 +135,7 @@ const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logre
       return (
         <div className="mb-6 p-4 bg-gradient-to-r from-yellow-600 to-orange-600 rounded-lg">
           <h3 className="text-xl font-bold text-white mb-2">{getModelName(selectedModel)} Performance Metrics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-3xl font-bold text-white">{(randomforestAccuracy * 100).toFixed(1)}%</div>
               <div className="text-yellow-200">Accuracy</div>
@@ -142,6 +146,18 @@ const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logre
                 <div className="text-yellow-200">AUC Score</div>
               </div>
             )}
+            {randomforestSensitivity !== null && randomforestSensitivity !== undefined && (
+              <div className="text-center">
+                <div className="text-3xl font-bold text-white">{(randomforestSensitivity * 100).toFixed(1)}%</div>
+                <div className="text-yellow-200">Sensitivity</div>
+              </div>
+            )}
+            {randomforestSpecificity !== null && randomforestSpecificity !== undefined && (
+              <div className="text-center">
+                <div className="text-3xl font-bold text-white">{(randomforestSpecificity * 100).toFixed(1)}%</div>
+                <div className="text-yellow-200">Specificity</div>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -149,7 +165,7 @@ const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logre
       return (
         <div className="mb-6 p-4 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg">
           <h3 className="text-xl font-bold text-white mb-2">{getModelName(selectedModel)} Performance Metrics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-3xl font-bold text-white">{(knnAccuracy * 100).toFixed(1)}%</div>
               <div className="text-green-200">Accuracy</div>
@@ -158,6 +174,18 @@ const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logre
               <div className="text-center">
                 <div className="text-3xl font-bold text-white">{(knnAuc * 100).toFixed(1)}%</div>
                 <div className="text-green-200">AUC Score</div>
+              </div>
+            )}
+            {knnSensitivity !== null && knnSensitivity !== undefined && (
+              <div className="text-center">
+                <div className="text-3xl font-bold text-white">{(knnSensitivity * 100).toFixed(1)}%</div>
+                <div className="text-green-200">Sensitivity</div>
+              </div>
+            )}
+            {knnSpecificity !== null && knnSpecificity !== undefined && (
+              <div className="text-center">
+                <div className="text-3xl font-bold text-white">{(knnSpecificity * 100).toFixed(1)}%</div>
+                <div className="text-green-200">Specificity</div>
               </div>
             )}
           </div>

@@ -1,0 +1,17 @@
+Random Forest Model Classification Report
+========================================
+
+              precision    recall  f1-score   support
+
+         0.0     0.7734    0.6994    0.7346      7070
+         1.0     0.7256    0.7950    0.7587      7069
+
+    accuracy                         0.7472     14139
+   macro avg     0.7495    0.7472    0.7466     14139
+weighted avg     0.7495    0.7472    0.7466     14139
+
+Accuracy: 0.7472
+AUC Score: 0.8261
+Sensitivity: 0.7950
+Specificity: 0.6994
+Mean CV Accuracy: 0.7516 (+/- 0.0099)

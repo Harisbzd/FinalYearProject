@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay, roc_auc_score, roc_curve, auc
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, cross_val_score
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay, roc_auc_score, roc_curve, auc, precision_score, recall_score, f1_score, matthews_corrcoef, precision_recall_curve, balanced_accuracy_score, make_scorer
 from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import calibration_curve
 from imblearn.over_sampling import SMOTE
@@ -10,6 +11,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 import os
+import sys
+
+# Add current directory to path for feature_engineering import
+sys.path.append(os.path.dirname(__file__))
+from feature_engineering import apply_feature_engineering
 
 # Model saving paths
 MODEL_PATH = "xgboost_model.joblib"
@@ -90,10 +96,14 @@ if __name__ == "__main__":
     df = pd.read_csv('diabetes_binary_5050split_health_indicators_BRFSS2015.csv')
     
     # -----------------------------
-    # Use ALL features (no feature dropping for better performance)
-    # -----------------------------
+    # Load and prepare data
     X = df.drop(columns=["Diabetes_binary"])
     y = df["Diabetes_binary"]
+    
+    print(f"Original features: {X.shape[1]}")
+    X = apply_feature_engineering(X)
+    print(f"Total features after engineering: {X.shape[1]}")
+    print(f"New features added: {X.shape[1] - 21}")
 
     # -----------------------------
     # Train-test split
@@ -103,50 +113,67 @@ if __name__ == "__main__":
     )
 
     # -----------------------------
-    # Scale ALL features with StandardScaler (better than MinMaxScaler)
+    # Scale ALL features with StandardScaler 
     # -----------------------------
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
 
     # -----------------------------
-    # Handle class imbalance with SMOTE (better than scale_pos_weight)
+    # Handle class imbalance with SMOTE 
     # -----------------------------
-    smote = SMOTE(random_state=42)
+    
+    # Use SMOTE to oversample minority class instead of undersampling
+    smote = SMOTE(random_state=42, k_neighbors=3)
     X_train_res, y_train_res = smote.fit_resample(X_train_scaled, y_train)
 
     # -----------------------------
-    # Define XGBoost model (removed scale_pos_weight since we use SMOTE)
+    # Define XGBoost model with enhanced parameters
     # -----------------------------
     xgb = XGBClassifier(
         objective="binary:logistic",
         eval_metric="logloss",
         random_state=42,
+        scale_pos_weight=1.0,  # Balanced since we use SMOTE
+        tree_method='hist',  # Faster training
+        enable_categorical=False
     )
 
     # -----------------------------
-    # Hyperparameter grid
+    # Fast hyperparameter distribution for quick testing
     # -----------------------------
-    param_grid = {
-        'n_estimators': [300, 500],
-        'max_depth': [6, 10],
-        'learning_rate': [0.1, 0.2],
-        'min_child_weight': [5, 7],
-        'subsample': [0.8, 0.9],
-        'colsample_bytree': [0.8, 1.0],
-        'gamma': [0, 0.1]
+    param_dist = {
+        'n_estimators': [200, 400, 600],  
+        'max_depth': [4, 6, 8, 10, 12],
+        'learning_rate': [0.05, 0.1, 0.15, 0.2, 0.25],
+        'min_child_weight': [1, 3, 5, 7, 10],
+        'subsample': [0.7, 0.8, 0.9, 1.0],
+        'colsample_bytree': [0.7, 0.8, 0.9, 1.0],
+        'gamma': [0, 0.1, 0.2, 0.3],
+        'reg_alpha': [0, 0.1, 0.5, 1.0],
+        'reg_lambda': [1, 1.5, 2, 3]
     }
 
     # -----------------------------
-    # Grid search
+    # Enhanced randomized search with balanced scoring
     # -----------------------------
-    grid = GridSearchCV(
+    # Create custom scorer that balances recall and accuracy
+    def balanced_recall_accuracy_scorer(y_true, y_pred):
+        recall = recall_score(y_true, y_pred)
+        accuracy = accuracy_score(y_true, y_pred)
+        return 0.6 * recall + 0.4 * accuracy  # 60% recall, 40% accuracy
+    
+    custom_scorer = make_scorer(balanced_recall_accuracy_scorer, greater_is_better=True)
+    
+    grid = RandomizedSearchCV(
         estimator=xgb,
-        param_grid=param_grid,
-        scoring='roc_auc',
-        cv=3,
+        param_distributions=param_dist,
+        n_iter=30,  # Reduced for faster execution on MacBook Air
+        scoring=custom_scorer,  # Balanced scoring for both sensitivity and accuracy
+        cv=2,  # Reduced CV folds for faster execution
         verbose=1,
-        n_jobs=-1
+        n_jobs=-1,
+        random_state=42
     )
 
     grid.fit(X_train_res, y_train_res)
@@ -156,15 +183,33 @@ if __name__ == "__main__":
     # -----------------------------
 
     # -----------------------------
-    # Evaluate on validation set
+    # Evaluate on validation set with threshold optimization
     # -----------------------------
     best_model = grid.best_estimator_
-    y_pred = best_model.predict(X_val_scaled)
     y_pred_proba = best_model.predict_proba(X_val_scaled)[:, 1]
+    
+    # Optimize threshold for better sensitivity
+    precision_vals, recall_vals, thresholds = precision_recall_curve(y_val, y_pred_proba)
+    
+    # Find threshold that maximizes F1 score
+    f1_scores = 2 * (precision_vals * recall_vals) / (precision_vals + recall_vals + 1e-8)
+    optimal_threshold_idx = np.argmax(f1_scores)
+    optimal_threshold = thresholds[optimal_threshold_idx]
+    
+    # Use optimized threshold for predictions
+    y_pred = (y_pred_proba >= optimal_threshold).astype(int)
+    
+    print(f"Optimal threshold for F1 score: {optimal_threshold:.4f}")
+    print(f"Default threshold (0.5) vs Optimal threshold ({optimal_threshold:.4f})")
 
-    # Calculate metrics
+    # Calculate comprehensive metrics
     accuracy = accuracy_score(y_val, y_pred)
     roc_auc = roc_auc_score(y_val, y_pred_proba)
+    precision = precision_score(y_val, y_pred)
+    recall = recall_score(y_val, y_pred)
+    f1 = f1_score(y_val, y_pred)
+    mcc = matthews_corrcoef(y_val, y_pred)
+    balanced_acc = balanced_accuracy_score(y_val, y_pred)
     
     # Calculate Sensitivity and Specificity from confusion matrix
     cm = confusion_matrix(y_val, y_pred)
@@ -172,12 +217,40 @@ if __name__ == "__main__":
     sensitivity = tp / (tp + fn)  # True Positive Rate (Recall for positive class)
     specificity = tn / (tn + fp)  # True Negative Rate
     
-    print("Validation Accuracy:", accuracy)
-    print("Sensitivity (Recall):", f"{sensitivity:.4f}")
-    print("Specificity:", f"{specificity:.4f}")
-    print("\nClassification Report:\n", classification_report(y_val, y_pred))
-    print("\nConfusion Matrix:\n", cm)
-    print("\nROC-AUC Score:", roc_auc)
+    # Print comprehensive classification evaluation metrics
+    print("=" * 60)
+    print("ENHANCED XGBOOST CLASSIFICATION EVALUATION METRICS")
+    print("=" * 60)
+    print(f"Validation Accuracy:     {accuracy:.4f}")
+    print(f"Balanced Accuracy:      {balanced_acc:.4f}")
+    print(f"Precision:              {precision:.4f}")
+    print(f"Recall (Sensitivity):   {recall:.4f}")
+    print(f"Specificity:            {specificity:.4f}")
+    print(f"F1-Score:               {f1:.4f}")
+    print(f"ROC-AUC Score:          {roc_auc:.4f}")
+    print(f"Matthews Correlation:   {mcc:.4f}")
+    print("=" * 60)
+    
+    # Confusion Matrix details
+    print("\nCONFUSION MATRIX:")
+    print(f"True Negatives (TN):    {tn}")
+    print(f"False Positives (FP):   {fp}")
+    print(f"False Negatives (FN):   {fn}")
+    print(f"True Positives (TP):    {tp}")
+    print(f"\nConfusion Matrix:\n{cm}")
+    
+    # Additional metrics
+    print(f"\nADDITIONAL METRICS:")
+    print(f"False Positive Rate:    {fp/(fp+tn):.4f}")
+    print(f"False Negative Rate:    {fn/(fn+tp):.4f}")
+    print(f"Positive Predictive Value: {tp/(tp+fp):.4f}")
+    print(f"Negative Predictive Value: {tn/(tn+fn):.4f}")
+    
+    print("\n" + "=" * 60)
+    print("DETAILED CLASSIFICATION REPORT:")
+    print("=" * 60)
+    print(classification_report(y_val, y_pred))
+    print("=" * 60)
 
 
     # -----------------------------
@@ -260,7 +333,36 @@ if __name__ == "__main__":
     # -----------------------------
     # Cross-validation scores
     # -----------------------------
-    cv_scores = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='accuracy')
-    print(f"Cross-validation scores: {cv_scores}")
-    print(f"Mean CV accuracy: {cv_scores.mean():.4f}")
-    print(f"Standard deviation: {cv_scores.std():.4f}")
+    print("\n" + "=" * 60)
+    print("CROSS-VALIDATION RESULTS")
+    print("=" * 60)
+    
+    # Cross-validation with multiple metrics
+    cv_accuracy = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='accuracy')
+    cv_precision = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='precision')
+    cv_recall = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='recall')
+    cv_f1 = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='f1')
+    cv_roc_auc = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='roc_auc')
+    cv_balanced_acc = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='balanced_accuracy')
+    
+    print(f"CV Accuracy scores:     {cv_accuracy}")
+    print(f"Mean CV Accuracy:       {cv_accuracy.mean():.4f} (+/- {cv_accuracy.std() * 2:.4f})")
+    print(f"CV Balanced Accuracy:   {cv_balanced_acc}")
+    print(f"Mean CV Balanced Acc:   {cv_balanced_acc.mean():.4f} (+/- {cv_balanced_acc.std() * 2:.4f})")
+    print(f"CV Precision scores:    {cv_precision}")
+    print(f"Mean CV Precision:      {cv_precision.mean():.4f} (+/- {cv_precision.std() * 2:.4f})")
+    print(f"CV Recall scores:       {cv_recall}")
+    print(f"Mean CV Recall:         {cv_recall.mean():.4f} (+/- {cv_recall.std() * 2:.4f})")
+    print(f"CV F1 scores:           {cv_f1}")
+    print(f"Mean CV F1:             {cv_f1.mean():.4f} (+/- {cv_f1.std() * 2:.4f})")
+    print(f"CV ROC-AUC scores:      {cv_roc_auc}")
+    print(f"Mean CV ROC-AUC:        {cv_roc_auc.mean():.4f} (+/- {cv_roc_auc.std() * 2:.4f})")
+    print("=" * 60)
+    
+    # Best hyperparameters
+    print("\nBEST HYPERPARAMETERS:")
+    print("=" * 60)
+    for param, value in grid.best_params_.items():
+        print(f"{param}: {value}")
+    print(f"Best CV Score: {grid.best_score_:.4f}")
+    print("=" * 60)

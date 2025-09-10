@@ -30,11 +30,15 @@ const PredictionPage: React.FC = () => {
   const [randomforestResult, setRandomforestResult] = useState<string | null>(null);
   const [randomforestAccuracy, setRandomforestAccuracy] = useState<number | null>(null);
   const [randomforestAuc, setRandomforestAuc] = useState<number | null>(null);
+  const [randomforestSensitivity, setRandomforestSensitivity] = useState<number | null>(null);
+  const [randomforestSpecificity, setRandomforestSpecificity] = useState<number | null>(null);
   const [randomforestFetchedInput, setRandomforestFetchedInput] = useState<any>(null);
   // Add state for KNN result
   const [knnResult, setKnnResult] = useState<string | null>(null);
   const [knnAccuracy, setKnnAccuracy] = useState<number | null>(null);
   const [knnAuc, setKnnAuc] = useState<number | null>(null);
+  const [knnSensitivity, setKnnSensitivity] = useState<number | null>(null);
+  const [knnSpecificity, setKnnSpecificity] = useState<number | null>(null);
   const [knnFetchedInput, setKnnFetchedInput] = useState<any>(null);
   const [showPatientInput, setShowPatientInput] = useState(false);
   const [showModelImages, setShowModelImages] = useState(false);
@@ -72,6 +76,7 @@ const PredictionPage: React.FC = () => {
   // Fetch user's prediction on mount
   useEffect(() => {
     const fetchPrediction = async () => {
+      console.log('Starting to fetch predictions, token:', token ? 'exists' : 'missing');
       setLoading(true);
       setError(null);
       try {
@@ -81,6 +86,7 @@ const PredictionPage: React.FC = () => {
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
         });
+        console.log('Logistic Regression API Response:', response.status, response.ok);
         if (response.ok) {
           const result = await response.json();
           setPrediction(result.prediction);
@@ -92,15 +98,62 @@ const PredictionPage: React.FC = () => {
           setLogregSpecificity(result.specificity);
           setLogregFetchedInput(result.input);
           setPredictionExists(true);
+          
+          // Also fetch KNN prediction if available
+          try {
+            const knnResponse = await fetch('/api/predict-diabetes-knn', {
+              method: 'GET',
+              headers: {
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              },
+            });
+            console.log('KNN API Response:', knnResponse.status, knnResponse.ok);
+            if (knnResponse.ok) {
+              const knnResult = await knnResponse.json();
+              setKnnResult(knnResult.prediction);
+              setKnnAccuracy(knnResult.accuracy);
+              setKnnAuc(knnResult.auc_score);
+              setKnnSensitivity(knnResult.sensitivity);
+              setKnnSpecificity(knnResult.specificity);
+              setKnnFetchedInput(knnResult.input);
+            }
+          } catch (knnErr) {
+            // KNN prediction might not exist yet, that's okay
+            console.log('KNN prediction not available yet');
+          }
+          
+          // Also fetch Random Forest prediction if available
+          try {
+            const randomforestResponse = await fetch('/api/predict-diabetes-randomforest', {
+              method: 'GET',
+              headers: {
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              },
+            });
+            if (randomforestResponse.ok) {
+              const randomforestResult = await randomforestResponse.json();
+              setRandomforestResult(randomforestResult.prediction);
+              setRandomforestAccuracy(randomforestResult.accuracy);
+              setRandomforestAuc(randomforestResult.auc_score);
+              setRandomforestSensitivity(randomforestResult.sensitivity);
+              setRandomforestSpecificity(randomforestResult.specificity);
+              setRandomforestFetchedInput(randomforestResult.input);
+            }
+          } catch (randomforestErr) {
+            // Random Forest prediction might not exist yet, that's okay
+            console.log('Random Forest prediction not available yet');
+          }
         } else {
+          console.log('Logistic Regression API failed:', response.status, response.statusText);
           setPrediction(null);
           setPredictionInput(null);
-          setPredictionExists(false);
+          // Don't set predictionExists to false here - check other models first
         }
       } catch (err) {
+        console.log('Error fetching predictions:', err);
         setPrediction(null);
         setPredictionInput(null);
-        setPredictionExists(false);
+        // Don't set predictionExists to false here - check other models first
       } finally {
         setLoading(false);
       }
@@ -108,11 +161,30 @@ const PredictionPage: React.FC = () => {
     if (token) fetchPrediction();
   }, [token]);
 
+  // Effect to update predictionExists based on any model results
+  useEffect(() => {
+    const hasAnyPrediction = logregResult !== null || 
+                           xgboostResult !== null || 
+                           randomforestResult !== null || 
+                           knnResult !== null;
+    
+    console.log('Updating predictionExists:', {
+      logregResult,
+      xgboostResult,
+      randomforestResult,
+      knnResult,
+      hasAnyPrediction,
+      currentPredictionExists: predictionExists
+    });
+    
+    setPredictionExists(hasAnyPrediction);
+  }, [logregResult, xgboostResult, randomforestResult, knnResult]);
+
   const handlePredictionSubmit = async (formData: any) => {
     setLoading(true);
     setError(null);
     setPrediction(null);
-    setPredictionExists(false);
+    // Don't reset predictionExists here - let the useEffect handle it
 
     const numericData = Object.entries(formData).reduce((acc, [key, value]) => {
       acc[key] = Number(value);
@@ -178,10 +250,14 @@ const PredictionPage: React.FC = () => {
         setRandomforestResult(null);
         setRandomforestAccuracy(null);
         setRandomforestAuc(null);
+        setRandomforestSensitivity(null);
+        setRandomforestSpecificity(null);
         setRandomforestFetchedInput(null);
         setKnnResult(null);
         setKnnAccuracy(null);
         setKnnAuc(null);
+        setKnnSensitivity(null);
+        setKnnSpecificity(null);
         setKnnFetchedInput(null);
       } else {
         setError(result.error || 'Failed to delete prediction.');
@@ -333,6 +409,8 @@ const PredictionPage: React.FC = () => {
           setRandomforestResult(randomforestResult.prediction);
           setRandomforestAccuracy(randomforestResult.accuracy);
           setRandomforestAuc(randomforestResult.auc_score);
+          setRandomforestSensitivity(randomforestResult.sensitivity);
+          setRandomforestSpecificity(randomforestResult.specificity);
           setRandomforestFetchedInput(predictionInput);
         } else {
           const errorResult = await randomforestResponse.json();
@@ -384,6 +462,8 @@ const PredictionPage: React.FC = () => {
           setKnnResult(knnResult.prediction);
           setKnnAccuracy(knnResult.accuracy);
           setKnnAuc(knnResult.auc_score);
+          setKnnSensitivity(knnResult.sensitivity);
+          setKnnSpecificity(knnResult.specificity);
           setKnnFetchedInput(predictionInput);
         } else {
           const errorResult = await knnResponse.json();
@@ -633,6 +713,16 @@ const PredictionPage: React.FC = () => {
                           AUC Score: {(knnAuc * 100).toFixed(1)}%
                         </div>
                       )}
+                      {knnSensitivity !== null && (
+                        <div className="text-sm text-white mt-1">
+                          Sensitivity: {(knnSensitivity * 100).toFixed(1)}%
+                        </div>
+                      )}
+                      {knnSpecificity !== null && (
+                        <div className="text-sm text-white mt-1">
+                          Specificity: {(knnSpecificity * 100).toFixed(1)}%
+                        </div>
+                      )}
                     </div>
                   )}
                   
@@ -824,6 +914,16 @@ const PredictionPage: React.FC = () => {
                           AUC Score: {(randomforestAuc * 100).toFixed(1)}%
                         </div>
                       )}
+                      {randomforestSensitivity !== null && (
+                        <div className="text-sm text-white mt-1">
+                          Sensitivity: {(randomforestSensitivity * 100).toFixed(1)}%
+                        </div>
+                      )}
+                      {randomforestSpecificity !== null && (
+                        <div className="text-sm text-white mt-1">
+                          Specificity: {(randomforestSpecificity * 100).toFixed(1)}%
+                        </div>
+                      )}
                     </div>
                   )}
                   
@@ -985,8 +1085,12 @@ const PredictionPage: React.FC = () => {
           xgboostSpecificity={xgboostSpecificity}
           randomforestAccuracy={randomforestAccuracy}
           randomforestAuc={randomforestAuc}
+          randomforestSensitivity={randomforestSensitivity}
+          randomforestSpecificity={randomforestSpecificity}
           knnAccuracy={knnAccuracy}
           knnAuc={knnAuc}
+          knnSensitivity={knnSensitivity}
+          knnSpecificity={knnSpecificity}
         />
       )}
     </div>
