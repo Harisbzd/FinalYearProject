@@ -27,16 +27,14 @@ export default function ChatBox({ onClose }: ChatBoxProps): React.JSX.Element {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      setCurrentIndex(-1); // All questions answered
+      setCurrentIndex(-1);
 
-      // ✅ Send answers to backend with latest input included
       fetch("/submit-answers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedAnswers),
       })
         .then((res) => res.json())
-        .then((data) => console.log("Server response:", data))
         .catch((err) => console.error("Error submitting answers:", err));
     }
   };

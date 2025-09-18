@@ -7,33 +7,29 @@ import StyledButton from './StyledButton';
 
 const PredictionPage: React.FC = () => {
   const { token } = useAuth();
-  const [prediction, setPrediction] = useState<string | null>(null);
+  const [, setPrediction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [predictionExists, setPredictionExists] = useState(false);
   const [predictionInput, setPredictionInput] = useState<any>(null);
-  // Add state for logistic regression result
   const [logregResult, setLogregResult] = useState<string | null>(null);
   const [logregAccuracy, setLogregAccuracy] = useState<number | null>(null);
   const [logregAuc, setLogregAuc] = useState<number | null>(null);
   const [logregSensitivity, setLogregSensitivity] = useState<number | null>(null);
   const [logregSpecificity, setLogregSpecificity] = useState<number | null>(null);
   const [logregFetchedInput, setLogregFetchedInput] = useState<any>(null);
-  // Add state for XGBoost result
   const [xgboostResult, setXgboostResult] = useState<string | null>(null);
   const [xgboostAccuracy, setXgboostAccuracy] = useState<number | null>(null);
   const [xgboostAuc, setXgboostAuc] = useState<number | null>(null);
   const [xgboostSensitivity, setXgboostSensitivity] = useState<number | null>(null);
   const [xgboostSpecificity, setXgboostSpecificity] = useState<number | null>(null);
   const [xgboostFetchedInput, setXgboostFetchedInput] = useState<any>(null);
-  // Add state for Random Forest result
   const [randomforestResult, setRandomforestResult] = useState<string | null>(null);
   const [randomforestAccuracy, setRandomforestAccuracy] = useState<number | null>(null);
   const [randomforestAuc, setRandomforestAuc] = useState<number | null>(null);
   const [randomforestSensitivity, setRandomforestSensitivity] = useState<number | null>(null);
   const [randomforestSpecificity, setRandomforestSpecificity] = useState<number | null>(null);
   const [randomforestFetchedInput, setRandomforestFetchedInput] = useState<any>(null);
-  // Add state for KNN result
   const [knnResult, setKnnResult] = useState<string | null>(null);
   const [knnAccuracy, setKnnAccuracy] = useState<number | null>(null);
   const [knnAuc, setKnnAuc] = useState<number | null>(null);
@@ -45,38 +41,52 @@ const PredictionPage: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<'logreg' | 'xgboost' | 'knn' | 'randomforest'>('logreg');
 
   // Function to get model-specific content
-  const getModelContent = () => {
-    const currentResult = logregResult !== null ? 'logreg' : 
-                         xgboostResult !== null ? 'xgboost' : 
-                         knnResult !== null ? 'knn' : 
-                         randomforestResult !== null ? 'randomforest' : 'logreg';
-
-    const modelInfo = {
-      logreg: {
-        title: "Logistic Regression Analysis",
-        description: "Using logistic regression to predict diabetes risk. This model provides a baseline prediction with good interpretability and fast performance."
-      },
-      xgboost: {
-        title: "XGBoost Prediction",
-        description: "Advanced gradient boosting model for diabetes prediction. XGBoost offers high accuracy and handles complex patterns in health data effectively."
-      },
-      knn: {
-        title: "K-Nearest Neighbors Analysis", 
-        description: "KNN model finds similar patients to predict diabetes risk. This approach is intuitive and works well with local patterns in the data."
-      },
-      randomforest: {
-        title: "Random Forest Prediction",
-        description: "Ensemble method combining multiple decision trees for robust diabetes prediction. Random Forest provides excellent accuracy and handles feature interactions well."
-      }
-    };
-
-    return modelInfo[currentResult];
+  const getCurrentResult = () => {
+    if (selectedModel === 'logreg' && logregResult !== null) {
+      return {
+        result: logregResult,
+        accuracy: logregAccuracy,
+        auc: logregAuc,
+        sensitivity: logregSensitivity,
+        specificity: logregSpecificity,
+        modelName: 'XGBoost'
+      };
+    } else if (selectedModel === 'xgboost' && xgboostResult !== null) {
+      return {
+        result: xgboostResult,
+        accuracy: xgboostAccuracy,
+        auc: xgboostAuc,
+        sensitivity: xgboostSensitivity,
+        specificity: xgboostSpecificity,
+        modelName: 'XGBoost'
+      };
+    } else if (selectedModel === 'knn' && knnResult !== null) {
+      return {
+        result: knnResult,
+        accuracy: knnAccuracy,
+        auc: knnAuc,
+        sensitivity: knnSensitivity,
+        specificity: knnSpecificity,
+        modelName: 'K-Nearest Neighbors'
+      };
+    } else if (selectedModel === 'randomforest' && randomforestResult !== null) {
+      return {
+        result: randomforestResult,
+        accuracy: randomforestAccuracy,
+        auc: randomforestAuc,
+        sensitivity: randomforestSensitivity,
+        specificity: randomforestSpecificity,
+        modelName: 'Random Forest'
+      };
+    }
+    return null;
   };
 
-  // Fetch user's prediction on mount
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _ = getCurrentResult();
+
   useEffect(() => {
     const fetchPrediction = async () => {
-      console.log('Starting to fetch predictions, token:', token ? 'exists' : 'missing');
       setLoading(true);
       setError(null);
       try {
@@ -86,7 +96,6 @@ const PredictionPage: React.FC = () => {
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
         });
-        console.log('Logistic Regression API Response:', response.status, response.ok);
         if (response.ok) {
           const result = await response.json();
           setPrediction(result.prediction);
@@ -98,62 +107,13 @@ const PredictionPage: React.FC = () => {
           setLogregSpecificity(result.specificity);
           setLogregFetchedInput(result.input);
           setPredictionExists(true);
-          
-          // Also fetch KNN prediction if available
-          try {
-            const knnResponse = await fetch('/api/predict-diabetes-knn', {
-              method: 'GET',
-              headers: {
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-              },
-            });
-            console.log('KNN API Response:', knnResponse.status, knnResponse.ok);
-            if (knnResponse.ok) {
-              const knnResult = await knnResponse.json();
-              setKnnResult(knnResult.prediction);
-              setKnnAccuracy(knnResult.accuracy);
-              setKnnAuc(knnResult.auc_score);
-              setKnnSensitivity(knnResult.sensitivity);
-              setKnnSpecificity(knnResult.specificity);
-              setKnnFetchedInput(knnResult.input);
-            }
-          } catch (knnErr) {
-            // KNN prediction might not exist yet, that's okay
-            console.log('KNN prediction not available yet');
-          }
-          
-          // Also fetch Random Forest prediction if available
-          try {
-            const randomforestResponse = await fetch('/api/predict-diabetes-randomforest', {
-              method: 'GET',
-              headers: {
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-              },
-            });
-            if (randomforestResponse.ok) {
-              const randomforestResult = await randomforestResponse.json();
-              setRandomforestResult(randomforestResult.prediction);
-              setRandomforestAccuracy(randomforestResult.accuracy);
-              setRandomforestAuc(randomforestResult.auc_score);
-              setRandomforestSensitivity(randomforestResult.sensitivity);
-              setRandomforestSpecificity(randomforestResult.specificity);
-              setRandomforestFetchedInput(randomforestResult.input);
-            }
-          } catch (randomforestErr) {
-            // Random Forest prediction might not exist yet, that's okay
-            console.log('Random Forest prediction not available yet');
-          }
         } else {
-          console.log('Logistic Regression API failed:', response.status, response.statusText);
           setPrediction(null);
           setPredictionInput(null);
-          // Don't set predictionExists to false here - check other models first
         }
       } catch (err) {
-        console.log('Error fetching predictions:', err);
         setPrediction(null);
         setPredictionInput(null);
-        // Don't set predictionExists to false here - check other models first
       } finally {
         setLoading(false);
       }
@@ -161,22 +121,11 @@ const PredictionPage: React.FC = () => {
     if (token) fetchPrediction();
   }, [token]);
 
-  // Effect to update predictionExists based on any model results
   useEffect(() => {
     const hasAnyPrediction = logregResult !== null || 
                            xgboostResult !== null || 
                            randomforestResult !== null || 
                            knnResult !== null;
-    
-    console.log('Updating predictionExists:', {
-      logregResult,
-      xgboostResult,
-      randomforestResult,
-      knnResult,
-      hasAnyPrediction,
-      currentPredictionExists: predictionExists
-    });
-    
     setPredictionExists(hasAnyPrediction);
   }, [logregResult, xgboostResult, randomforestResult, knnResult]);
 
@@ -269,13 +218,10 @@ const PredictionPage: React.FC = () => {
     }
   };
 
-  // Handler for Logistic Regression button
   const handleLogisticRegression = async () => {
     setLoading(true);
     setError(null);
     setSelectedModel('logreg');
-    
-    // Clear other model results when switching to Logistic Regression
     setXgboostResult(null);
     setXgboostAccuracy(null);
     setXgboostAuc(null);
@@ -290,7 +236,7 @@ const PredictionPage: React.FC = () => {
     setKnnFetchedInput(null);
     
     try {
-      // Always make a fresh Logistic Regression prediction using the saved input data
+      // Always make a fresh XGBoost prediction using the saved input data
       if (predictionInput) {
         const logregResponse = await fetch('/api/predict-diabetes', {
           method: 'POST',
@@ -490,9 +436,9 @@ const PredictionPage: React.FC = () => {
       <div className="relative z-10 w-full max-w-6xl flex flex-col md:flex-row gap-8">
         {/* Left Side */}
         <div className="flex-1 flex flex-col justify-center items-center text-gray-100 md:pr-4 mb-8 md:mb-0">
-          <h1 className="text-4xl font-extrabold mb-4 text-center md:text-left">{getModelContent().title}</h1>
+          <h1 className="text-4xl font-extrabold mb-4 text-center md:text-left">Data Scientist Dashboard</h1>
           <p className="text-lg text-gray-300 text-center md:text-left max-w-md">
-            {getModelContent().description}
+            Select a machine learning model to view predictions and performance metrics.
           </p>
           
           {logregResult !== null && (
@@ -1026,7 +972,7 @@ const PredictionPage: React.FC = () => {
             <div className="flex flex-col gap-4 justify-center items-center">
               <StyledButton
                 onClick={handleLogisticRegression}
-                label="Logistic Regression"
+                label="XGBoost"
                 color="blue"
                 icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2z" /></svg>}
                 disabled={loading}

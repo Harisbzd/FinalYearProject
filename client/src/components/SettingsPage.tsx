@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { FaUser, FaEnvelope, FaKey, FaCalendar } from 'react-icons/fa';
+import { FaUser, FaKey, FaCalendar } from 'react-icons/fa';
 
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -13,7 +13,6 @@ const SettingsPage: React.FC = () => {
         </h1>
         
         <div className="space-y-6">
-          {/* Profile Information */}
           <div className="bg-blue-50 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-blue-800 mb-4 flex items-center">
               <FaUser className="mr-2" />
@@ -35,7 +34,6 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Security Settings */}
           <div className="bg-green-50 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-green-800 mb-4 flex items-center">
               <FaKey className="mr-2" />

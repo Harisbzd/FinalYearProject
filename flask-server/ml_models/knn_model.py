@@ -24,12 +24,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 from joblib import dump, load
 import sys
 
-# Add current directory to path for feature_engineering import
+# Add current directory to path for imports
 sys.path.append(os.path.dirname(__file__))
 from feature_engineering import apply_feature_engineering
+from model_utils import load_model_metrics
 
 # Resolve important paths
 THIS_DIR = os.path.dirname(__file__)
@@ -45,52 +47,12 @@ SENSITIVITY_PATH = os.path.join(SERVER_DIR, "knn_sensitivity.txt")
 SPECIFICITY_PATH = os.path.join(SERVER_DIR, "knn_specificity.txt")
 COLUMNS_PATH = os.path.join(SERVER_DIR, "knn_columns.npy")
 
-_loaded_model = None
-_loaded_accuracy = None
-_loaded_auc = None
-_loaded_sensitivity = None
-_loaded_specificity = None
-_loaded_columns = None
-
-# Feature engineering is now imported from shared module
+# Global variables removed - using shared load_model_metrics function
 
 def load_model():
-    global _loaded_model, _loaded_accuracy, _loaded_auc, _loaded_sensitivity, _loaded_specificity, _loaded_columns
-    if _loaded_model is None:
-        if os.path.exists(MODEL_PATH):
-            _loaded_model = load(MODEL_PATH)
-        else:
-            _loaded_model = None
-    if _loaded_accuracy is None:
-        if os.path.exists(ACCURACY_PATH):
-            with open(ACCURACY_PATH) as f:
-                _loaded_accuracy = float(f.read().strip())
-        else:
-            _loaded_accuracy = None
-    if _loaded_auc is None:
-        if os.path.exists(AUC_PATH):
-            with open(AUC_PATH) as f:
-                _loaded_auc = float(f.read().strip())
-        else:
-            _loaded_auc = None
-    if _loaded_sensitivity is None:
-        if os.path.exists(SENSITIVITY_PATH):
-            with open(SENSITIVITY_PATH) as f:
-                _loaded_sensitivity = float(f.read().strip())
-        else:
-            _loaded_sensitivity = None
-    if _loaded_specificity is None:
-        if os.path.exists(SPECIFICITY_PATH):
-            with open(SPECIFICITY_PATH) as f:
-                _loaded_specificity = float(f.read().strip())
-        else:
-            _loaded_specificity = None
-    if _loaded_columns is None:
-        if os.path.exists(COLUMNS_PATH):
-            _loaded_columns = np.load(COLUMNS_PATH, allow_pickle=True)
-        else:
-            _loaded_columns = None
-    return _loaded_model, _loaded_accuracy, _loaded_auc, _loaded_sensitivity, _loaded_specificity, _loaded_columns
+    """Load KNN model and metrics using shared utility function"""
+    model, accuracy, auc, sensitivity, specificity, columns, scaler = load_model_metrics('knn')
+    return model, accuracy, auc, sensitivity, specificity, columns
 
 def predict_knn(input_dict):
     model, acc, auc_score, sensitivity, specificity, columns = load_model()
@@ -99,12 +61,12 @@ def predict_knn(input_dict):
     
     input_df = pd.DataFrame([input_dict])
     
-    # Reindex to match expected columns
-    if columns is not None:
-        input_df = input_df.reindex(columns=columns, fill_value=0)
-    
     # Apply the same feature engineering as training
     input_df = apply_feature_engineering(input_df)
+    
+    # Reindex to match expected columns (engineered features)
+    if columns is not None:
+        input_df = input_df.reindex(columns=columns, fill_value=0)
     
     # Pipeline handles scaling automatically
     pred_proba = model.predict_proba(input_df)[:, 1]
@@ -124,7 +86,7 @@ if __name__ == "__main__":
     y = df["Diabetes_binary"]
     
     print(f"Original features: {X.shape[1]}")
-    X = apply_feature_engineering(X)
+    X, y = apply_feature_engineering(X, target=y)
     print(f"Total features after engineering: {X.shape[1]}")
     print(f"New features added: {X.shape[1] - 21}")
 
@@ -133,13 +95,10 @@ if __name__ == "__main__":
         X, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    # Apply SMOTE to handle class imbalance
-    smote = SMOTE(random_state=42)
-    X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
-
-    # Create pipeline with StandardScaler and KNeighborsClassifier
-    pipeline = Pipeline([
+    # Create pipeline to avoid data leakage - SMOTE and scaling happen inside CV
+    pipeline = ImbPipeline([
         ('scaler', StandardScaler()),
+        ('smote', SMOTE(random_state=42)),
         ('classifier', KNeighborsClassifier())
     ])
     param_dist = {
@@ -150,27 +109,61 @@ if __name__ == "__main__":
         'classifier__algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute']
     }
 
-    # Custom scorer that balances recall and accuracy
+    # Custom scorers for different optimization metrics
+    def balanced_accuracy_scorer(y_true, y_pred):
+        return balanced_accuracy_score(y_true, y_pred)
+    
+    def youden_j_scorer(y_true, y_pred):
+        cm = confusion_matrix(y_true, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        return sensitivity + specificity - 1
+    
+    def cost_sensitive_scorer(y_true, y_pred, cost_fn=2.0, cost_fp=1.0):
+        cm = confusion_matrix(y_true, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        cost = cost_fn * fn + cost_fp * fp
+        return -cost
+    
     def balanced_recall_accuracy_scorer(y_true, y_pred):
         recall = recall_score(y_true, y_pred)
         accuracy = accuracy_score(y_true, y_pred)
         return 0.6 * recall + 0.4 * accuracy
     
+    balanced_acc_scorer = make_scorer(balanced_accuracy_scorer, greater_is_better=True)
+    youden_j_scorer_wrapper = make_scorer(youden_j_scorer, greater_is_better=True)
+    cost_sensitive_scorer_wrapper = make_scorer(cost_sensitive_scorer, greater_is_better=True)
     custom_scorer = make_scorer(balanced_recall_accuracy_scorer, greater_is_better=True)
+    
+    SCORING_METRIC = 'youden_j'
+    
+    if SCORING_METRIC == 'balanced_accuracy':
+        selected_scorer = balanced_acc_scorer
+        print("Using Balanced Accuracy for optimization (range: 0-1)")
+    elif SCORING_METRIC == 'youden_j':
+        selected_scorer = youden_j_scorer_wrapper
+        print("Using Youden's J statistic for optimization (range: -1 to 1)")
+    elif SCORING_METRIC == 'cost_sensitive':
+        selected_scorer = cost_sensitive_scorer_wrapper
+        print("Using Cost-sensitive metric for optimization (minimizes cost)")
+    else:
+        selected_scorer = custom_scorer
+        print("Using Balanced Recall-Accuracy for optimization (range: 0-1)")
 
     # Hyperparameter tuning with RandomizedSearchCV
     grid = RandomizedSearchCV(
         pipeline,
         param_distributions=param_dist,
         n_iter=50,
-        scoring=custom_scorer,
+        scoring=selected_scorer,
         cv=3,
         verbose=1,
         n_jobs=-1,
         random_state=42
     )
 
-    grid.fit(X_train_res, y_train_res)
+    grid.fit(X_train, y_train)
 
     # Apply probability calibration
     print("\nApplying probability calibration...")
@@ -183,7 +176,7 @@ if __name__ == "__main__":
         n_jobs=-1
     )
     
-    calibrated_model.fit(X_train_res, y_train_res)
+    calibrated_model.fit(X_train, y_train)
     print("Calibration completed!")
 
     # Evaluate with threshold optimization
@@ -193,15 +186,92 @@ if __name__ == "__main__":
     y_pred_proba_calibrated = calibrated_model.predict_proba(X_val)[:, 1]
     y_pred_proba = y_pred_proba_calibrated
     
-    # Optimize threshold for better sensitivity
-    precision_vals, recall_vals, thresholds = precision_recall_curve(y_val, y_pred_proba)
-    f1_scores = 2 * (precision_vals * recall_vals) / (precision_vals + recall_vals + 1e-8)
-    optimal_threshold_idx = np.argmax(f1_scores)
-    optimal_threshold = thresholds[optimal_threshold_idx]
+    # Use explicit threshold grid to avoid indexing issues
+    threshold_grid = np.linspace(0.01, 0.99, 99)  # Avoid 0 and 1 to prevent edge cases
+    
+    f1_scores = []
+    youden_j_scores = []
+    balanced_acc_scores = []
+    
+    for threshold in threshold_grid:
+        y_pred_thresh = (y_pred_proba >= threshold).astype(int)
+        cm = confusion_matrix(y_val, y_pred_thresh)
+        if cm.shape == (2, 2):
+            tn, fp, fn, tp = cm.ravel()
+            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = sensitivity
+            
+            # Calculate metrics
+            f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+            youden_j = sensitivity + specificity - 1
+            balanced_acc = (sensitivity + specificity) / 2
+        else:
+            f1 = 0
+            youden_j = 0
+            balanced_acc = 0
+        
+        f1_scores.append(f1)
+        youden_j_scores.append(youden_j)
+        balanced_acc_scores.append(balanced_acc)
+    
+    f1_optimal_idx = np.argmax(f1_scores)
+    youden_j_optimal_idx = np.argmax(youden_j_scores)
+    balanced_acc_optimal_idx = np.argmax(balanced_acc_scores)
+    
+    f1_optimal_threshold = threshold_grid[f1_optimal_idx]
+    youden_j_optimal_threshold = threshold_grid[youden_j_optimal_idx]
+    balanced_acc_optimal_threshold = threshold_grid[balanced_acc_optimal_idx]
+    
+    if SCORING_METRIC == 'youden_j':
+        optimal_threshold = youden_j_optimal_threshold
+        print(f"Using Youden's J optimal threshold: {optimal_threshold:.4f}")
+    elif SCORING_METRIC == 'balanced_accuracy':
+        optimal_threshold = balanced_acc_optimal_threshold
+        print(f"Using Balanced Accuracy optimal threshold: {optimal_threshold:.4f}")
+    else:
+        optimal_threshold = f1_optimal_threshold
+        print(f"Using F1 optimal threshold: {optimal_threshold:.4f}")
     
     y_val_pred = (y_pred_proba >= optimal_threshold).astype(int)
     
-    print(f"Optimal threshold: {optimal_threshold:.4f}")
+    print(f"\nThreshold Comparison:")
+    print(f"F1 optimal: {f1_optimal_threshold:.4f}")
+    print(f"Youden's J optimal: {youden_j_optimal_threshold:.4f}")
+    print(f"Balanced Acc optimal: {balanced_acc_optimal_threshold:.4f}")
+    print(f"Selected: {optimal_threshold:.4f}")
+    
+    print(f"\n" + "=" * 60)
+    print("THRESHOLD OPTIMIZATION COMPARISON")
+    print("=" * 60)
+    
+    thresholds_to_test = {
+        'Default (0.5)': 0.5,
+        'F1 Optimal': f1_optimal_threshold,
+        'Youden J Optimal': youden_j_optimal_threshold,
+        'Balanced Acc Optimal': balanced_acc_optimal_threshold
+    }
+    
+    for name, thresh in thresholds_to_test.items():
+        y_pred_test = (y_pred_proba >= thresh).astype(int)
+        cm_test = confusion_matrix(y_val, y_pred_test)
+        tn, fp, fn, tp = cm_test.ravel()
+        
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        youden_j = sensitivity + specificity - 1
+        balanced_acc = (sensitivity + specificity) / 2
+        f1 = f1_score(y_val, y_pred_test)
+        accuracy = accuracy_score(y_val, y_pred_test)
+        
+        print(f"\n{name} (threshold={thresh:.4f}):")
+        print(f"  Accuracy: {accuracy:.4f}")
+        print(f"  Balanced Accuracy: {balanced_acc:.4f}")
+        print(f"  Sensitivity: {sensitivity:.4f}")
+        print(f"  Specificity: {specificity:.4f}")
+        print(f"  Youden's J: {youden_j:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
     
     # Calculate Brier Score for calibration comparison
     brier_uncalibrated = brier_score_loss(y_val, y_pred_proba_uncalibrated)
@@ -226,9 +296,10 @@ if __name__ == "__main__":
     sensitivity = tp / (tp + fn)
     specificity = tn / (tn + fp)
     
-    # Print evaluation metrics
-    print("\nKNN CLASSIFICATION EVALUATION METRICS")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print(f"KNN CLASSIFICATION EVALUATION METRICS")
+    print(f"Optimized using: {SCORING_METRIC.upper()}")
+    print("=" * 60)
     print(f"Validation Accuracy:     {accuracy:.4f}")
     print(f"Balanced Accuracy:      {balanced_acc:.4f}")
     print(f"Precision:              {precision:.4f}")
@@ -248,6 +319,9 @@ if __name__ == "__main__":
     
     print("\nClassification Report:")
     print(classification_report(y_val, y_val_pred))
+
+    # Ensure output directory exists
+    os.makedirs(CLIENT_PUBLIC_DIR, exist_ok=True)
 
     # Confusion matrix figure
     plt.figure(figsize=(6, 5))
@@ -282,7 +356,7 @@ if __name__ == "__main__":
 
 
     # Feature Importance Plot (variance-based for KNN)
-    X_train_scaled = best_model.named_steps['scaler'].transform(X_train_res)
+    X_train_scaled = best_model.named_steps['scaler'].transform(X_train)
     feature_variance = pd.DataFrame({
         'feature': X.columns,
         'importance': np.var(X_train_scaled, axis=0)
@@ -315,10 +389,25 @@ if __name__ == "__main__":
     plt.close()
 
 
-    # Cross-validation scores
-    cv_scores = cross_val_score(best_model, X_train_scaled, y_train_res, cv=5, scoring='accuracy')
-    print(f"\nCross-validation scores: {cv_scores}")
-    print(f"Mean CV accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+    print("\n" + "=" * 60)
+    print("CROSS-VALIDATION RESULTS")
+    print("=" * 60)
+    
+    # Use pipeline for proper cross-validation without data leakage
+    cv_accuracy = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='accuracy')
+    cv_precision = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='precision')
+    cv_recall = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='recall')
+    cv_f1 = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='f1')
+    cv_roc_auc = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='roc_auc')
+    cv_balanced_acc = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='balanced_accuracy')
+    
+    print(f"CV Accuracy:       {cv_accuracy.mean():.4f} (+/- {cv_accuracy.std() * 2:.4f})")
+    print(f"CV Balanced Acc:   {cv_balanced_acc.mean():.4f} (+/- {cv_balanced_acc.std() * 2:.4f})")
+    print(f"CV Precision:      {cv_precision.mean():.4f} (+/- {cv_precision.std() * 2:.4f})")
+    print(f"CV Recall:         {cv_recall.mean():.4f} (+/- {cv_recall.std() * 2:.4f})")
+    print(f"CV F1:             {cv_f1.mean():.4f} (+/- {cv_f1.std() * 2:.4f})")
+    print(f"CV ROC-AUC:        {cv_roc_auc.mean():.4f} (+/- {cv_roc_auc.std() * 2:.4f})")
+    print("=" * 60)
 
     # Save classification report
     classification_report_path = os.path.join(CLIENT_PUBLIC_DIR, "knn_classification_report.txt")
@@ -330,35 +419,14 @@ if __name__ == "__main__":
         f.write(f"AUC Score: {roc_auc:.4f}\n")
         f.write(f"Sensitivity: {sensitivity:.4f}\n")
         f.write(f"Specificity: {specificity:.4f}\n")
-        f.write(f"Mean CV Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+        f.write(f"Mean CV Accuracy: {cv_accuracy.mean():.4f} (+/- {cv_accuracy.std() * 2:.4f})")
 
-    # Enhanced Cross-validation scores
-    print("\nCROSS-VALIDATION RESULTS")
-    print("=" * 50)
-    
-    # Cross-validation with multiple metrics
-    cv_accuracy = cross_val_score(calibrated_model, X_train_res, y_train_res, cv=5, scoring='accuracy')
-    cv_precision = cross_val_score(calibrated_model, X_train_res, y_train_res, cv=5, scoring='precision')
-    cv_recall = cross_val_score(calibrated_model, X_train_res, y_train_res, cv=5, scoring='recall')
-    cv_f1 = cross_val_score(calibrated_model, X_train_res, y_train_res, cv=5, scoring='f1')
-    cv_roc_auc = cross_val_score(calibrated_model, X_train_res, y_train_res, cv=5, scoring='roc_auc')
-    cv_balanced_acc = cross_val_score(calibrated_model, X_train_res, y_train_res, cv=5, scoring='balanced_accuracy')
-    
-    print(f"CV Accuracy:       {cv_accuracy.mean():.4f} (+/- {cv_accuracy.std() * 2:.4f})")
-    print(f"CV Balanced Acc:   {cv_balanced_acc.mean():.4f} (+/- {cv_balanced_acc.std() * 2:.4f})")
-    print(f"CV Precision:      {cv_precision.mean():.4f} (+/- {cv_precision.std() * 2:.4f})")
-    print(f"CV Recall:         {cv_recall.mean():.4f} (+/- {cv_recall.std() * 2:.4f})")
-    print(f"CV F1:             {cv_f1.mean():.4f} (+/- {cv_f1.std() * 2:.4f})")
-    print(f"CV ROC-AUC:        {cv_roc_auc.mean():.4f} (+/- {cv_roc_auc.std() * 2:.4f})")
-    print("=" * 50)
-    
-    # Best hyperparameters
     print("\nBEST HYPERPARAMETERS:")
-    print("=" * 50)
+    print("=" * 60)
     for param, value in grid.best_params_.items():
         print(f"{param}: {value}")
     print(f"Best CV Score: {grid.best_score_:.4f}")
-    print("=" * 50)
+    print("=" * 60)
 
     # Save model and metrics
     dump(calibrated_model, MODEL_PATH)

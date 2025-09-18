@@ -38,7 +38,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [userRole, setUserRole] = useState<'patient' | 'data-scientist' | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check for existing token on app load
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
@@ -70,7 +69,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(data.user);
         setToken(tokenToVerify);
       } else {
-        // Token is invalid, clear storage
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setToken(null);

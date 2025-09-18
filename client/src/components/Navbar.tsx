@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FaUser, FaSignOutAlt, FaCog, FaChevronDown, FaExchangeAlt } from 'react-icons/fa';
+import { FaUser, FaSignOutAlt, FaChevronDown, FaExchangeAlt } from 'react-icons/fa';
 
 const Navbar: React.FC = () => {
   const { user, logout, isAuthenticated, userRole, setUserRole } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  useLocation();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -44,7 +44,7 @@ const Navbar: React.FC = () => {
   };
 
   return (
-    <nav className="shadow-lg border-b border-gray-300 fixed w-full z-50 bg-gray-600">
+    <nav className="shadow-lg border-b border-emerald-200 fixed w-full z-50 bg-gradient-to-r from-emerald-600 to-teal-600">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo and Brand */}
@@ -67,9 +67,9 @@ const Navbar: React.FC = () => {
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium text-gray-100 hover:text-white hover:bg-gray-700 transition-colors drop-shadow-lg"
+                className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium text-white hover:text-emerald-100 hover:bg-emerald-700 transition-colors drop-shadow-lg"
               >
-                <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-emerald-700 rounded-full flex items-center justify-center">
                   <FaUser className="text-white text-sm" />
                 </div>
                 <span className="hidden md:block">{user.username}</span>
@@ -78,13 +78,13 @@ const Navbar: React.FC = () => {
 
               {/* Dropdown Menu */}
               {isDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-gray-900 bg-opacity-90 rounded-md shadow-lg py-1 z-50 border border-gray-700">
+                <div className="absolute right-0 mt-2 w-56 bg-emerald-900 bg-opacity-95 rounded-md shadow-lg py-1 z-50 border border-emerald-700">
                   {/* User Info Section */}
-                  <div className="px-4 py-3 border-b border-gray-700">
+                  <div className="px-4 py-3 border-b border-emerald-700">
                     <p className="text-sm font-medium text-white">{user.username}</p>
                     <p className="text-sm text-gray-400">{user.email}</p>
                     {userRole && (
-                      <p className="text-xs text-blue-400 mt-1">
+                      <p className="text-xs text-emerald-400 mt-1">
                         Role: {userRole === 'patient' ? 'Patient' : 'Data Scientist'}
                       </p>
                     )}
@@ -95,22 +95,12 @@ const Navbar: React.FC = () => {
                     {userRole && (
                       <button
                         onClick={handleRoleSwitch}
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-200 hover:bg-emerald-800 hover:text-white transition-colors"
                       >
                         <FaExchangeAlt className="mr-3 text-gray-400" />
                         Switch to {userRole === 'patient' ? 'Data Scientist' : 'Patient'}
                       </button>
                     )}
-                    <button
-                      onClick={() => {
-                        navigate('/settings');
-                        setIsDropdownOpen(false);
-                      }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
-                    >
-                      <FaCog className="mr-3 text-gray-400" />
-                      Settings
-                    </button>
                     <button
                       onClick={handleLogout}
                       className="flex items-center w-full px-4 py-2 text-sm text-red-400 hover:bg-red-900 hover:text-red-300 transition-colors"
@@ -155,22 +145,13 @@ const Navbar: React.FC = () => {
 
         {/* Mobile menu */}
         <div className={`${isDropdownOpen ? 'block' : 'hidden'} md:hidden`}>
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-gray-900 bg-opacity-90">
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-emerald-900 bg-opacity-90">
             {isAuthenticated && user && (
-              <div className="border-t border-gray-700 pt-4">
+              <div className="border-t border-emerald-700 pt-4">
                 <div className="px-3 py-2">
                   <p className="text-sm font-medium text-white">{user.username}</p>
                   <p className="text-sm text-gray-400">{user.email}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    navigate('/settings');
-                    setIsDropdownOpen(false);
-                  }}
-                  className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-200 hover:text-white hover:bg-gray-700"
-                >
-                  Settings
-                </button>
                 <button
                   onClick={handleLogout}
                   className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-400 hover:text-red-300 hover:bg-red-900"

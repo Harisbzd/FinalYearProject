@@ -1,5 +1,4 @@
 import React from 'react';
-// Updated interface to support model-specific images and accuracy
 
 interface ModelImagesProps {
   onClose: () => void;
@@ -23,7 +22,6 @@ interface ModelImagesProps {
 }
 
 const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logregAccuracy, logregAuc, logregSensitivity, logregSpecificity, xgboostAccuracy, xgboostAuc, xgboostSensitivity, xgboostSpecificity, randomforestAccuracy, randomforestAuc, randomforestSensitivity, randomforestSpecificity, knnAccuracy, knnAuc, knnSensitivity, knnSpecificity }) => {
-  // Define model-specific image paths
   const getImagePaths = (model: string) => {
     switch (model) {
       case 'xgboost':
@@ -59,9 +57,9 @@ const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logre
 
   const imagePaths = getImagePaths(selectedModel);
   
-  // Get model name for display
   const getModelName = (model: string) => {
     switch (model) {
+      case 'logreg': return 'Logistic Regression';
       case 'xgboost': return 'XGBoost';
       case 'knn': return 'K-Nearest Neighbors';
       case 'randomforest': return 'Random Forest';
@@ -69,7 +67,6 @@ const ModelImages: React.FC<ModelImagesProps> = ({ onClose, selectedModel, logre
     }
   };
 
-  // Get accuracy display
   const getAccuracyDisplay = () => {
     if (selectedModel === 'xgboost' && xgboostAccuracy !== null && xgboostAccuracy !== undefined) {
       return (

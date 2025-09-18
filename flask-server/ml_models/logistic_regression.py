@@ -7,15 +7,17 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay, roc_curve, roc_auc_score, precision_score, recall_score, f1_score, matthews_corrcoef, precision_recall_curve, balanced_accuracy_score, make_scorer, brier_score_loss
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 import joblib
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
 
-# Add current directory to path for feature_engineering import
+# Add current directory to path for imports
 sys.path.append(os.path.dirname(__file__))
 from feature_engineering import apply_feature_engineering
+from model_utils import load_model_metrics
 
 # Model saving paths
 MODEL_PATH = "logreg_model.joblib"
@@ -25,56 +27,25 @@ SENSITIVITY_PATH = "logreg_sensitivity.txt"
 SPECIFICITY_PATH = "logreg_specificity.txt"
 COLUMNS_PATH = "logreg_columns.npy"
 
-_loaded_model = None
-_loaded_accuracy = None
-_loaded_auc = None
-_loaded_sensitivity = None
-_loaded_specificity = None
-_loaded_columns = None
+# Global variables removed - using shared load_model_metrics function
 
 def load_model():
-    global _loaded_model, _loaded_accuracy, _loaded_auc, _loaded_sensitivity, _loaded_specificity, _loaded_columns
-    if _loaded_model is None:
-        _loaded_model = joblib.load(MODEL_PATH)
-    if _loaded_accuracy is None:
-        if os.path.exists(ACCURACY_PATH):
-            with open(ACCURACY_PATH) as f:
-                _loaded_accuracy = float(f.read().strip())
-        else:
-            _loaded_accuracy = None
-    if _loaded_auc is None:
-        if os.path.exists(AUC_PATH):
-            with open(AUC_PATH) as f:
-                _loaded_auc = float(f.read().strip())
-        else:
-            _loaded_auc = None
-    if _loaded_sensitivity is None:
-        if os.path.exists(SENSITIVITY_PATH):
-            with open(SENSITIVITY_PATH) as f:
-                _loaded_sensitivity = float(f.read().strip())
-        else:
-            _loaded_sensitivity = None
-    if _loaded_specificity is None:
-        if os.path.exists(SPECIFICITY_PATH):
-            with open(SPECIFICITY_PATH) as f:
-                _loaded_specificity = float(f.read().strip())
-        else:
-            _loaded_specificity = None
-    if _loaded_columns is None:
-        if os.path.exists(COLUMNS_PATH):
-            _loaded_columns = np.load(COLUMNS_PATH, allow_pickle=True)
-        else:
-            _loaded_columns = None
-    return _loaded_model, _loaded_accuracy, _loaded_auc, _loaded_sensitivity, _loaded_specificity, _loaded_columns
+    """Load logistic regression model and metrics using shared utility function"""
+    model, accuracy, auc, sensitivity, specificity, columns, scaler = load_model_metrics('logreg')
+    return model, accuracy, auc, sensitivity, specificity, columns
 
 def predict_logreg(input_dict):
     model, acc, auc_score, sensitivity, specificity, columns = load_model()
     input_df = pd.DataFrame([input_dict])
-    if columns is not None:
-        input_df = input_df.reindex(columns=columns)
     
     # Apply the same feature engineering as training
     input_df = apply_feature_engineering(input_df)
+    
+    # Remove features that were removed during training to match model expectations
+    if hasattr(model, 'feature_names_in_'):
+        expected_features = list(model.feature_names_in_)
+        # Only keep features that the model expects
+        input_df = input_df.reindex(columns=expected_features, fill_value=0)
     
     # Pipeline handles scaling automatically
     pred = model.predict(input_df)[0]
@@ -90,7 +61,7 @@ if __name__ == "__main__":
     y = df["Diabetes_binary"]
     
     print(f"Original features: {X.shape[1]}")
-    X = apply_feature_engineering(X)
+    X, y = apply_feature_engineering(X, target=y)
     print(f"Total features after engineering: {X.shape[1]}")
     print(f"New features added: {X.shape[1] - 21}")
 
@@ -101,13 +72,10 @@ if __name__ == "__main__":
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Handle class imbalance with SMOTE
-    smote = SMOTE(random_state=42)
-    X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
-
-    # Create pipeline with StandardScaler and LogisticRegression
-    pipeline = Pipeline([
+    # Create pipeline to avoid data leakage - SMOTE and scaling happen inside CV
+    pipeline = ImbPipeline([
         ('scaler', StandardScaler()),
+        ('smote', SMOTE(random_state=42)),
         ('classifier', LogisticRegression(random_state=42, solver='saga', max_iter=3000))
     ])
 
@@ -137,26 +105,60 @@ if __name__ == "__main__":
         }
     ]
 
-    # Create custom scorer that balances recall and accuracy
+    # Custom scorers for different optimization metrics
+    def balanced_accuracy_scorer(y_true, y_pred):
+        return balanced_accuracy_score(y_true, y_pred)
+    
+    def youden_j_scorer(y_true, y_pred):
+        cm = confusion_matrix(y_true, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        return sensitivity + specificity - 1
+    
+    def cost_sensitive_scorer(y_true, y_pred, cost_fn=2.0, cost_fp=1.0):
+        cm = confusion_matrix(y_true, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        cost = cost_fn * fn + cost_fp * fp
+        return -cost
+    
     def balanced_recall_accuracy_scorer(y_true, y_pred):
         recall = recall_score(y_true, y_pred)
         accuracy = accuracy_score(y_true, y_pred)
         return 0.6 * recall + 0.4 * accuracy
     
+    balanced_acc_scorer = make_scorer(balanced_accuracy_scorer, greater_is_better=True)
+    youden_j_scorer_wrapper = make_scorer(youden_j_scorer, greater_is_better=True)
+    cost_sensitive_scorer_wrapper = make_scorer(cost_sensitive_scorer, greater_is_better=True)
     custom_scorer = make_scorer(balanced_recall_accuracy_scorer, greater_is_better=True)
+    
+    SCORING_METRIC = 'youden_j'
+    
+    if SCORING_METRIC == 'balanced_accuracy':
+        selected_scorer = balanced_acc_scorer
+        print("Using Balanced Accuracy for optimization (range: 0-1)")
+    elif SCORING_METRIC == 'youden_j':
+        selected_scorer = youden_j_scorer_wrapper
+        print("Using Youden's J statistic for optimization (range: -1 to 1)")
+    elif SCORING_METRIC == 'cost_sensitive':
+        selected_scorer = cost_sensitive_scorer_wrapper
+        print("Using Cost-sensitive metric for optimization (minimizes cost)")
+    else:
+        selected_scorer = custom_scorer
+        print("Using Balanced Recall-Accuracy for optimization (range: 0-1)")
 
     grid = RandomizedSearchCV(
         pipeline,
         param_distributions=param_dist,
         n_iter=30,
-        scoring=custom_scorer,
-        cv=2,
+        scoring=selected_scorer,
+        cv=3,
         verbose=1,
         n_jobs=-1,
         random_state=42
     )
 
-    grid.fit(X_train_res, y_train_res)
+    grid.fit(X_train, y_train)
 
     # Apply probability calibration
     print("\nApplying probability calibration...")
@@ -169,7 +171,7 @@ if __name__ == "__main__":
         n_jobs=-1
     )
     
-    calibrated_model.fit(X_train_res, y_train_res)
+    calibrated_model.fit(X_train, y_train)
     print("Calibration completed!")
 
     # Evaluate with threshold optimization
@@ -182,18 +184,92 @@ if __name__ == "__main__":
     # Use calibrated probabilities for evaluation
     y_pred_proba = y_pred_proba_calibrated
     
-    # Optimize threshold for better sensitivity
-    precision_vals, recall_vals, thresholds = precision_recall_curve(y_val, y_pred_proba)
+    # Use explicit threshold grid to avoid indexing issues
+    threshold_grid = np.linspace(0.01, 0.99, 99)  # Avoid 0 and 1 to prevent edge cases
     
-    # Find threshold that maximizes F1 score
-    f1_scores = 2 * (precision_vals * recall_vals) / (precision_vals + recall_vals + 1e-8)
-    optimal_threshold_idx = np.argmax(f1_scores)
-    optimal_threshold = thresholds[optimal_threshold_idx]
+    f1_scores = []
+    youden_j_scores = []
+    balanced_acc_scores = []
     
-    # Use optimized threshold for predictions
+    for threshold in threshold_grid:
+        y_pred_thresh = (y_pred_proba >= threshold).astype(int)
+        cm = confusion_matrix(y_val, y_pred_thresh)
+        if cm.shape == (2, 2):
+            tn, fp, fn, tp = cm.ravel()
+            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = sensitivity
+            
+            # Calculate metrics
+            f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+            youden_j = sensitivity + specificity - 1
+            balanced_acc = (sensitivity + specificity) / 2
+        else:
+            f1 = 0
+            youden_j = 0
+            balanced_acc = 0
+        
+        f1_scores.append(f1)
+        youden_j_scores.append(youden_j)
+        balanced_acc_scores.append(balanced_acc)
+    
+    f1_optimal_idx = np.argmax(f1_scores)
+    youden_j_optimal_idx = np.argmax(youden_j_scores)
+    balanced_acc_optimal_idx = np.argmax(balanced_acc_scores)
+    
+    f1_optimal_threshold = threshold_grid[f1_optimal_idx]
+    youden_j_optimal_threshold = threshold_grid[youden_j_optimal_idx]
+    balanced_acc_optimal_threshold = threshold_grid[balanced_acc_optimal_idx]
+    
+    if SCORING_METRIC == 'youden_j':
+        optimal_threshold = youden_j_optimal_threshold
+        print(f"Using Youden's J optimal threshold: {optimal_threshold:.4f}")
+    elif SCORING_METRIC == 'balanced_accuracy':
+        optimal_threshold = balanced_acc_optimal_threshold
+        print(f"Using Balanced Accuracy optimal threshold: {optimal_threshold:.4f}")
+    else:
+        optimal_threshold = f1_optimal_threshold
+        print(f"Using F1 optimal threshold: {optimal_threshold:.4f}")
+    
     y_pred = (y_pred_proba >= optimal_threshold).astype(int)
     
-    print(f"Optimal threshold: {optimal_threshold:.4f}")
+    print(f"\nThreshold Comparison:")
+    print(f"F1 optimal: {f1_optimal_threshold:.4f}")
+    print(f"Youden's J optimal: {youden_j_optimal_threshold:.4f}")
+    print(f"Balanced Acc optimal: {balanced_acc_optimal_threshold:.4f}")
+    print(f"Selected: {optimal_threshold:.4f}")
+    
+    print(f"\n" + "=" * 60)
+    print("THRESHOLD OPTIMIZATION COMPARISON")
+    print("=" * 60)
+    
+    thresholds_to_test = {
+        'Default (0.5)': 0.5,
+        'F1 Optimal': f1_optimal_threshold,
+        'Youden J Optimal': youden_j_optimal_threshold,
+        'Balanced Acc Optimal': balanced_acc_optimal_threshold
+    }
+    
+    for name, thresh in thresholds_to_test.items():
+        y_pred_test = (y_pred_proba >= thresh).astype(int)
+        cm_test = confusion_matrix(y_val, y_pred_test)
+        tn, fp, fn, tp = cm_test.ravel()
+        
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        youden_j = sensitivity + specificity - 1
+        balanced_acc = (sensitivity + specificity) / 2
+        f1 = f1_score(y_val, y_pred_test)
+        accuracy = accuracy_score(y_val, y_pred_test)
+        
+        print(f"\n{name} (threshold={thresh:.4f}):")
+        print(f"  Accuracy: {accuracy:.4f}")
+        print(f"  Balanced Accuracy: {balanced_acc:.4f}")
+        print(f"  Sensitivity: {sensitivity:.4f}")
+        print(f"  Specificity: {specificity:.4f}")
+        print(f"  Youden's J: {youden_j:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
     
     # Calculate Brier Score for calibration comparison
     brier_uncalibrated = brier_score_loss(y_val, y_pred_proba_uncalibrated)
@@ -218,9 +294,10 @@ if __name__ == "__main__":
     sensitivity = tp / (tp + fn)
     specificity = tn / (tn + fp)
     
-    # Print evaluation metrics
-    print("\nLOGISTIC REGRESSION CLASSIFICATION EVALUATION METRICS")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print(f"LOGISTIC REGRESSION CLASSIFICATION EVALUATION METRICS")
+    print(f"Optimized using: {SCORING_METRIC.upper()}")
+    print("=" * 60)
     print(f"Validation Accuracy:     {accuracy:.4f}")
     print(f"Balanced Accuracy:      {balanced_acc:.4f}")
     print(f"Precision:              {precision:.4f}")
@@ -241,6 +318,10 @@ if __name__ == "__main__":
     print("\nClassification Report:")
     print(classification_report(y_val, y_pred))
 
+    # Ensure output directory exists
+    output_dir = '../client/public'
+    os.makedirs(output_dir, exist_ok=True)
+
     # Feature Importance Plot
     feature_importance = pd.DataFrame({
         'feature': X.columns,
@@ -253,32 +334,26 @@ if __name__ == "__main__":
     plt.title('Feature Importance - Logistic Regression')
     plt.xlabel('Feature Importance Score')
     plt.tight_layout()
-    plt.savefig('../client/public/logreg_feature_importance.png')
+    plt.savefig(os.path.join(output_dir, 'logreg_feature_importance.png'))
     plt.close()
 
-    # Calibration Curve Comparison
     plt.figure(figsize=(12, 8))
-    
-    # Uncalibrated model
     prob_true_uncal, prob_pred_uncal = calibration_curve(y_val, y_pred_proba_uncalibrated, n_bins=10)
     plt.plot(prob_pred_uncal, prob_true_uncal, marker='o', label='Uncalibrated Logistic Regression', linewidth=2)
     
-    # Calibrated model
     prob_true_cal, prob_pred_cal = calibration_curve(y_val, y_pred_proba_calibrated, n_bins=10)
     plt.plot(prob_pred_cal, prob_true_cal, marker='s', label='Calibrated Logistic Regression', linewidth=2)
     
-    # Perfect calibration line
     plt.plot([0, 1], [0, 1], linestyle='--', color='red', label='Perfectly Calibrated', linewidth=2)
     
     plt.xlabel('Mean Predicted Probability')
     plt.ylabel('True Probability')
-    plt.title('Calibration Curve Comparison - Logistic Regression')
+    plt.title('Calibration Curve - Logistic Regression')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     
-    # Add Brier scores to the plot
     plt.text(0.05, 0.95, f'Uncalibrated Brier Score: {brier_uncalibrated:.4f}', 
              transform=plt.gca().transAxes, fontsize=10, 
              bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7))
@@ -287,18 +362,16 @@ if __name__ == "__main__":
              bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
     
     plt.tight_layout()
-    plt.savefig('../client/public/logreg_calibration_curve.png', dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, 'logreg_calibration_curve.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
-    # Confusion Matrix
     plt.figure(figsize=(8, 6))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=best_model.classes_)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=best_model.named_steps['classifier'].classes_)
     disp.plot(cmap='Blues', values_format='d')
     plt.title('Confusion Matrix - Logistic Regression')
-    plt.savefig('../client/public/logreg_confusion_matrix.png')
+    plt.savefig(os.path.join(output_dir, 'logreg_confusion_matrix.png'))
     plt.close()
 
-    # ROC Curve
     fpr, tpr, _ = roc_curve(y_val, y_pred_proba)
     plt.figure(figsize=(8, 6))
     plt.plot(fpr, tpr, label=f"ROC curve (area = {roc_auc:.2f})")
@@ -309,7 +382,7 @@ if __name__ == "__main__":
     plt.ylabel('True Positive Rate')
     plt.title('ROC Curve - Logistic Regression')
     plt.legend(loc="lower right")
-    plt.savefig('../client/public/logreg_roc_curve.png')
+    plt.savefig(os.path.join(output_dir, 'logreg_roc_curve.png'))
     plt.close()
 
     # Save model and metrics
@@ -324,16 +397,17 @@ if __name__ == "__main__":
     with open(SPECIFICITY_PATH, "w") as f:
         f.write(str(specificity))
 
-    # Cross-validation scores
-    print("\nCROSS-VALIDATION RESULTS")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print("CROSS-VALIDATION RESULTS")
+    print("=" * 60)
     
-    cv_accuracy = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='accuracy')
-    cv_precision = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='precision')
-    cv_recall = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='recall')
-    cv_f1 = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='f1')
-    cv_roc_auc = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='roc_auc')
-    cv_balanced_acc = cross_val_score(best_model, X_train_res, y_train_res, cv=5, scoring='balanced_accuracy')
+    # Use pipeline for proper cross-validation without data leakage
+    cv_accuracy = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='accuracy')
+    cv_precision = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='precision')
+    cv_recall = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='recall')
+    cv_f1 = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='f1')
+    cv_roc_auc = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='roc_auc')
+    cv_balanced_acc = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='balanced_accuracy')
     
     print(f"CV Accuracy:       {cv_accuracy.mean():.4f} (+/- {cv_accuracy.std() * 2:.4f})")
     print(f"CV Balanced Acc:   {cv_balanced_acc.mean():.4f} (+/- {cv_balanced_acc.std() * 2:.4f})")
@@ -341,12 +415,11 @@ if __name__ == "__main__":
     print(f"CV Recall:         {cv_recall.mean():.4f} (+/- {cv_recall.std() * 2:.4f})")
     print(f"CV F1:             {cv_f1.mean():.4f} (+/- {cv_f1.std() * 2:.4f})")
     print(f"CV ROC-AUC:        {cv_roc_auc.mean():.4f} (+/- {cv_roc_auc.std() * 2:.4f})")
-    print("=" * 50)
+    print("=" * 60)
     
-    # Best hyperparameters
     print("\nBEST HYPERPARAMETERS:")
-    print("=" * 50)
+    print("=" * 60)
     for param, value in grid.best_params_.items():
         print(f"{param}: {value}")
     print(f"Best CV Score: {grid.best_score_:.4f}")
-    print("=" * 50)
+    print("=" * 60)

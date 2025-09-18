@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import RoleSelection from './RoleSelection';
 import PatientDashboard from './PatientDashboard';
-import PredictionPage from './predictionPage';
+import DataScientistDashboard from './DataScientistDashboard';
 
 const Dashboard: React.FC = () => {
   const { userRole, setUserRole } = useAuth();
@@ -17,9 +17,9 @@ const Dashboard: React.FC = () => {
     return <PatientDashboard />;
   }
 
-  // If data scientist role is selected, show prediction page with all models
+  // If data scientist role is selected, show data scientist dashboard
   if (userRole === 'data-scientist') {
-    return <PredictionPage />;
+    return <DataScientistDashboard />;
   }
 
   return null;
