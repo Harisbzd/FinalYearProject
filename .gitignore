@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 */node_modules/
+**/node_modules/
 
 # Python
 __pycache__/
@@ -31,6 +32,8 @@ env/
 ENV/
 env.bak/
 venv.bak/
+*/venv/
+*/env/
 
 # IDE
 .vscode/
@@ -82,22 +85,29 @@ jspm_packages/
 .yarn-integrity
 
 # dotenv environment variables file
-.env
+# .env  # Commented out to make .env visible for academic project
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
 # Machine Learning Models (keep only essential ones)
-*.joblib
-*.h5
-*.pkl
-*.pickle
+# Keep only the best performing model (XGBoost) and one backup
+# ensemble_model.joblib
+# knn_model.joblib
+# randomforest_model.joblib
+# logreg_model.joblib
+# best_cnn_model.h5
+# calibrated_logreg_model.joblib
 
 # Data files (keep only essential ones)
-*.csv
+# Remove large datasets - keep only cleaned/processed versions
+# diabetes_012_health_indicators_BRFSS2015.csv
+# diabetes_binary_5050split_health_indicators_BRFSS2015.csv
+# engineered_dataset.csv
+# cleaned_dataset.csv
 *.json
-*.npy
+# *.npy
 
 # CatBoost info
 catboost_info/
@@ -109,4 +119,6 @@ catboost_info/
 # Build outputs
 build/
 dist/
+**/build/
+**/dist/
 
